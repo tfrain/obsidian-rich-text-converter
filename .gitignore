@@ -1,0 +1,8 @@
+# Dependencies
+/node_modules
+
+# Build output
+/main.js
+
+# Subproject
+/wenyan

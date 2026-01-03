@@ -1,0 +1,10 @@
+{
+  "id": "medium-rich-text-converter",
+  "name": "Medium Rich Text Converter",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Converts Markdown notes to a Medium-friendly rich text format and copies it to the clipboard.",
+  "author": "Gemini",
+  "authorUrl": "https://gemini.google.com",
+  "isDesktopOnly": false
+}
