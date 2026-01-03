@@ -102,6 +102,15 @@ class MediumPreviewView extends ItemView {
         // Add styling to pre blocks for better preview, but do not convert them
         body.querySelectorAll("pre").forEach(el => {
             el.setAttribute('style', 'background-color: #f0f0f0; padding: 1em; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word;');
+
+            // FIX FOR MANUAL COPY of code blocks with empty lines
+            const codeEl = el.querySelector('code');
+            if (codeEl) {
+                // Replace empty lines with a non-breaking space to prevent splitting on manual copy
+                const originalCode = codeEl.innerHTML; // Already escaped by marked
+                const newCode = originalCode.split('\n').map(line => line.trim() === '' ? '&nbsp;' : line).join('\n');
+                codeEl.innerHTML = newCode;
+            }
         });
 
 		// Unwrap figures
