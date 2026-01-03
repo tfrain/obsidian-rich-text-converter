@@ -37,14 +37,91 @@ class MediumPreviewView extends ItemView {
         // Nothing to clean up.
     }
 
+    // Creates a custom renderer with all the fixes
+    private getRenderer(forPreview: boolean): marked.Renderer {
+        const renderer = new marked.Renderer();
+
+        // FIX: Strip <p> tags from blockquotes to remove the extra bottom margin they create in Medium.
+        renderer.blockquote = (quote) => {
+            const strippedQuote = quote.replace(/^<p>|<\/p>$/g, '');
+            return `<blockquote>${strippedQuote}</blockquote>`;
+        };
+        
+        // --- Other fixes remain the same ---
+
+        renderer.hr = () => `<hr>`;
+        renderer.paragraph = (text) => `<p>${text}</p>`;
+        
+        renderer.heading = (text, level) => {
+            const tag = level <= 2 ? 'h3' : 'h4';
+            return `<${tag}><strong style="font-weight: bold;">${text}</strong></${tag}>`;
+        };
+        renderer.strong = (text) => `<strong style="font-weight: bold;">${text}</strong>`;
+
+        renderer.code = (code, lang) => {
+            const escapedCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const finalCode = escapedCode.split('\n').map(line => line.trim() === '' ? '&nbsp;' : line).join('\n');
+            
+            if (forPreview) {
+                const langClass = lang ? `language-${lang}` : 'no-highlight';
+                return `<pre style="background-color: #f0f0f0; padding: 1em; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word;"><code class="${langClass}">${finalCode}</code></pre>`;
+            } else {
+                // For the clipboard, Medium prefers a simple <pre> tag.
+                return `<pre>${finalCode}</pre>`;
+            }
+        };
+
+        renderer.list = (body, ordered, start) => {
+            const tag = ordered ? 'ol' : 'ul';
+            const startAttr = (ordered && start !== 1) ? ` start="${start}"` : '';
+            return `<${tag}${startAttr}>${body}</${tag}>`;
+        };
+        renderer.listitem = (text) => `<li>${text}</li>`;
+
+        return renderer;
+    }
+
+    getMediumHtml(markdown: string): string {
+        // Generate HTML for the PREVIEW using the renderer
+        return marked(markdown, { renderer: this.getRenderer(true), headerIds: false });
+    }
+
+    copyRenderedContent() {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) {
+            new Notice('No active Markdown view to copy from.');
+            return;
+        }
+    
+        try {
+            const markdown = view.editor.getValue();
+            // Generate PRISTINE HTML for the clipboard using the renderer
+            const finalHtmlForClipboard = marked(markdown, { renderer: this.getRenderer(false), headerIds: false });
+    
+            const listener = (e: ClipboardEvent) => {
+                if (!e.clipboardData) return;
+                e.clipboardData.setData('text/html', finalHtmlForClipboard);
+                e.clipboardData.setData('text/plain', markdown);
+                e.preventDefault();
+            };
+    
+            document.addEventListener('copy', listener);
+            document.execCommand('copy');
+            document.removeEventListener('copy', listener);
+    
+            new Notice('Medium-compatible content copied to clipboard!');
+    
+        } catch (err) {
+            new Notice('Error copying rich text to clipboard: ' + err);
+            console.error(err);
+        }
+    }
+
     update() {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         const container = this.containerEl.children[1];
 
-        // If there's no active markdown view, do nothing.
-        // This prevents the view from clearing itself when it (or another non-markdown view) gains focus.
         if (!view) {
-            // But if the view is empty, show a placeholder.
             if (!container.hasChildNodes()) {
                 container.createEl("div", { text: "Open a Markdown file to see the Medium preview.", cls: "medium-preview-placeholder" });
             }
@@ -53,7 +130,6 @@ class MediumPreviewView extends ItemView {
         
 		container.empty();
 
-        // Re-create the header and button every time we update
         const header = container.createEl("div", { 
             cls: "medium-preview-header", 
             attr: { 'style': 'display: flex; justify-content: space-between; align-items: center; padding: 10px;' } 
@@ -72,116 +148,6 @@ class MediumPreviewView extends ItemView {
             attr: { 'style': 'padding: 0 10px 10px 10px; user-select: text; -webkit-user-select: text;' }
         });
         previewEl.innerHTML = finalHtml;
-    }
-
-    getMediumHtml(markdown: string): string {
-        // This method now focuses on creating a good PREVIEW.
-        // The special Medium transformation is moved to the copy function.
-        const initialHtml = marked(markdown, { headerIds: false });
-
-        const parser = new DOMParser();
-		const doc = parser.parseFromString(initialHtml, 'text/html');
-		const body = doc.body;
-
-		// Clean attributes from all elements to be safe
-		body.querySelectorAll("*").forEach(el => {
-			el.removeAttribute("class");
-			el.removeAttribute("id");
-		});
-
-		// Bolden headings
-		body.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach(el => {
-			el.innerHTML = `<strong>${el.innerHTML}</strong>`;
-		});
-
-        // FIX FOR MANUAL COPY: Add inline style to all <strong> tags in the preview DOM.
-        body.querySelectorAll("strong").forEach(strongEl => {
-            strongEl.setAttribute('style', 'font-weight: bold;');
-        });
-
-        // Add styling to pre blocks for better preview, but do not convert them
-        body.querySelectorAll("pre").forEach(el => {
-            el.setAttribute('style', 'background-color: #f0f0f0; padding: 1em; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word;');
-
-            // FIX FOR MANUAL COPY of code blocks with empty lines
-            const codeEl = el.querySelector('code');
-            if (codeEl) {
-                // Replace empty lines with a non-breaking space to prevent splitting on manual copy
-                const originalCode = codeEl.innerHTML; // Already escaped by marked
-                const newCode = originalCode.split('\n').map(line => line.trim() === '' ? '&nbsp;' : line).join('\n');
-                codeEl.innerHTML = newCode;
-            }
-        });
-
-		// Unwrap figures
-		body.querySelectorAll("figure").forEach(el => {
-			el.outerHTML = el.innerHTML;
-		});
-
-        return body.innerHTML;
-    }
-
-    copyRenderedContent() {
-        const previewEl = this.containerEl.querySelector(".medium-preview") as HTMLElement;
-        if (!previewEl) {
-            new Notice('No content to copy.');
-            return;
-        }
-
-        // 1. Save the original, good-looking preview HTML
-        const originalPreviewHtml = previewEl.innerHTML;
-
-        try {
-            // 2. Create the transformed HTML for the clipboard
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(originalPreviewHtml, 'text/html');
-            const body = doc.body;
-
-            // FIX #1: Bold formatting
-            // Add inline style to all <strong> tags to ensure Medium retains bold.
-            body.querySelectorAll("strong").forEach(strongEl => {
-                strongEl.setAttribute('style', 'font-weight: bold;');
-            });
-
-            // FIX #2: Code blocks with empty lines
-            body.querySelectorAll("pre").forEach(preEl => {
-                // Remove preview styling that might interfere
-                preEl.removeAttribute('style');
-                
-                const codeEl = preEl.querySelector('code');
-                if (codeEl) {
-                    // Replace empty lines with a non-breaking space to prevent splitting
-                    const originalCode = codeEl.innerHTML; // Already escaped by marked
-                    const newCode = originalCode.split('\n').map(line => line.trim() === '' ? '&nbsp;' : line).join('\n');
-                    codeEl.innerHTML = newCode;
-                }
-            });
-
-            const finalHtmlForClipboard = body.innerHTML;
-
-            // 3. Temporarily replace the visible content with the clipboard version
-            previewEl.innerHTML = finalHtmlForClipboard;
-            
-            // 4. Select and copy from the visible element (original working mechanism)
-            const range = document.createRange();
-            range.selectNodeContents(previewEl);
-            const selection = window.getSelection();
-            selection?.removeAllRanges();
-            selection?.addRange(range);
-
-            document.execCommand('copy');
-            
-            selection?.removeAllRanges();
-
-            new Notice('Medium-compatible content copied to clipboard!');
-
-        } catch (err) {
-            new Notice('Error copying rich text to clipboard: ' + err);
-            console.error(err);
-        } finally {
-            // 5. ALWAYS restore the original content, even if copy fails
-            previewEl.innerHTML = originalPreviewHtml;
-        }
     }
 }
 
