@@ -94,6 +94,11 @@ class MediumPreviewView extends ItemView {
 			el.innerHTML = `<strong>${el.innerHTML}</strong>`;
 		});
 
+        // FIX FOR MANUAL COPY: Add inline style to all <strong> tags in the preview DOM.
+        body.querySelectorAll("strong").forEach(strongEl => {
+            strongEl.setAttribute('style', 'font-weight: bold;');
+        });
+
         // Add styling to pre blocks for better preview, but do not convert them
         body.querySelectorAll("pre").forEach(el => {
             el.setAttribute('style', 'background-color: #f0f0f0; padding: 1em; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word;');
@@ -123,14 +128,24 @@ class MediumPreviewView extends ItemView {
             const doc = parser.parseFromString(originalPreviewHtml, 'text/html');
             const body = doc.body;
 
-            // Perform the PRE transformation for Medium's clipboard
-            body.querySelectorAll("pre").forEach(el => {
-                // Keep the <pre> tag, but replace its content with just the text.
-                // This strips out the inner <code> and any syntax highlighting classes.
-                const codeText = el.textContent;
-                el.innerHTML = ''; // Clear the inside of the <pre>
-                el.textContent = codeText; // Set its text content directly
-                el.removeAttribute('style'); // Remove preview styling
+            // FIX #1: Bold formatting
+            // Add inline style to all <strong> tags to ensure Medium retains bold.
+            body.querySelectorAll("strong").forEach(strongEl => {
+                strongEl.setAttribute('style', 'font-weight: bold;');
+            });
+
+            // FIX #2: Code blocks with empty lines
+            body.querySelectorAll("pre").forEach(preEl => {
+                // Remove preview styling that might interfere
+                preEl.removeAttribute('style');
+                
+                const codeEl = preEl.querySelector('code');
+                if (codeEl) {
+                    // Replace empty lines with a non-breaking space to prevent splitting
+                    const originalCode = codeEl.innerHTML; // Already escaped by marked
+                    const newCode = originalCode.split('\n').map(line => line.trim() === '' ? '&nbsp;' : line).join('\n');
+                    codeEl.innerHTML = newCode;
+                }
             });
 
             const finalHtmlForClipboard = body.innerHTML;
@@ -138,7 +153,7 @@ class MediumPreviewView extends ItemView {
             // 3. Temporarily replace the visible content with the clipboard version
             previewEl.innerHTML = finalHtmlForClipboard;
             
-            // 4. Select and copy from the visible element
+            // 4. Select and copy from the visible element (original working mechanism)
             const range = document.createRange();
             range.selectNodeContents(previewEl);
             const selection = window.getSelection();
