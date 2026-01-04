@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS: MyPluginSettings = {
 export const MEDIUM_PREVIEW_VIEW_TYPE = "medium-preview-view";
 
 class MediumPreviewView extends ItemView {
+    private markdownContent: string;
     constructor(leaf: WorkspaceLeaf) {
         super(leaf);
     }
@@ -27,6 +28,7 @@ class MediumPreviewView extends ItemView {
     }
 
     async onOpen() {
+        this.markdownContent = "";
         this.update(); // Initial render
         
         this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.update()));
@@ -86,31 +88,25 @@ class MediumPreviewView extends ItemView {
         return marked(markdown, { renderer: this.getRenderer(true), headerIds: false });
     }
 
-    copyRenderedContent() {
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!view) {
-            new Notice('No active Markdown view to copy from.');
+    async copyRenderedContent() {
+        if (!this.markdownContent) {
+            new Notice('No content to copy.');
             return;
         }
-    
+
         try {
-            const markdown = view.editor.getValue();
-            // Generate PRISTINE HTML for the clipboard using the renderer
-            const finalHtmlForClipboard = marked(markdown, { renderer: this.getRenderer(false), headerIds: false });
-    
-            const listener = (e: ClipboardEvent) => {
-                if (!e.clipboardData) return;
-                e.clipboardData.setData('text/html', finalHtmlForClipboard);
-                e.clipboardData.setData('text/plain', markdown);
-                e.preventDefault();
-            };
-    
-            document.addEventListener('copy', listener);
-            document.execCommand('copy');
-            document.removeEventListener('copy', listener);
-    
+            const finalHtmlForClipboard = marked(this.markdownContent, { renderer: this.getRenderer(false), headerIds: false });
+
+            // Create a Blob with the HTML content
+            const blob = new Blob([finalHtmlForClipboard], { type: 'text/html' });
+            // Create a ClipboardItem with the Blob
+            const clipboardItem = new ClipboardItem({ 'text/html': blob });
+
+            // Write the ClipboardItem to the clipboard
+            await navigator.clipboard.write([clipboardItem]);
+
             new Notice('Medium-compatible content copied to clipboard!');
-    
+
         } catch (err) {
             new Notice('Error copying rich text to clipboard: ' + err);
             console.error(err);
@@ -119,9 +115,13 @@ class MediumPreviewView extends ItemView {
 
     update() {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view) {
+            this.markdownContent = view.editor.getValue();
+        }
+
         const container = this.containerEl.children[1];
 
-        if (!view) {
+        if (!this.markdownContent) {
             if (!container.hasChildNodes()) {
                 container.createEl("div", { text: "Open a Markdown file to see the Medium preview.", cls: "medium-preview-placeholder" });
             }
@@ -136,12 +136,11 @@ class MediumPreviewView extends ItemView {
         });
         header.createEl("h4", { text: "Medium Preview", attr: { 'style': 'margin: 0;' } });
         const copyButton = header.createEl("button", { text: "Copy to Medium", cls: "mod-cta" });
-        copyButton.onClickEvent(() => {
-            this.copyRenderedContent();
+        copyButton.onClickEvent(async () => {
+            await this.copyRenderedContent();
         });
 
-        const markdown = view.editor.getValue();
-        const finalHtml = this.getMediumHtml(markdown);
+        const finalHtml = this.getMediumHtml(this.markdownContent);
 
         const previewEl = container.createEl("div", { 
             cls: "medium-preview",
