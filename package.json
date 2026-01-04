@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-medium-converter",
+  "name": "obsidian-rich-text-converter",
   "version": "1.0.0",
   "description": "Convert Markdown to Medium-friendly rich text format.",
   "main": "main.js",
