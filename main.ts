@@ -106,10 +106,56 @@ class MediumPreviewView extends ItemView {
         }).join('\n');
     }
 
+    private parseFrontMatter(markdown: string): { title: string | null, content: string } {
+        const lines = markdown.split('\n');
+        
+        if (lines[0].trim() !== '---') {
+            return { title: null, content: markdown };
+        }
+    
+        let frontMatterEnd = -1;
+        for (let i = 1; i < lines.length; i++) {
+            if (lines[i].trim() === '---') {
+                frontMatterEnd = i;
+                break;
+            }
+        }
+    
+        if (frontMatterEnd === -1) {
+            return { title: null, content: markdown };
+        }
+    
+        const frontMatterLines = lines.slice(1, frontMatterEnd);
+        const content = lines.slice(frontMatterEnd + 1).join('\n');
+        
+        let title: string | null = null;
+        for (const line of frontMatterLines) {
+            const match = line.match(/^title:\s*(.*)/);
+            if (match) {
+                title = match[1].trim();
+                // Remove surrounding quotes
+                if ((title.startsWith('"') && title.endsWith('"')) || (title.startsWith("'") && title.endsWith("'"))) {
+                    title = title.substring(1, title.length - 1);
+                }
+                break;
+            }
+        }
+    
+        return { title, content };
+    }
+
     getMediumHtml(markdown: string): string {
-        const processedMarkdown = this.preProcessMarkdown(markdown);
-        // Generate HTML for the PREVIEW using the renderer
-        return marked(processedMarkdown, { renderer: this.getRenderer(true), headerIds: false });
+        const { title, content } = this.parseFrontMatter(markdown);
+    
+        let titleHtml = '';
+        if (title) {
+            titleHtml = `<h1>${title}</h1>`;
+        }
+
+        const processedContent = this.preProcessMarkdown(content);
+        const contentHtml = marked(processedContent, { renderer: this.getRenderer(true), headerIds: false });
+        
+        return titleHtml + contentHtml;
     }
 
     async copyRenderedContent() {
@@ -119,8 +165,17 @@ class MediumPreviewView extends ItemView {
         }
 
         try {
-            const processedMarkdown = this.preProcessMarkdown(this.markdownContent);
-            const finalHtmlForClipboard = marked(processedMarkdown, { renderer: this.getRenderer(false), headerIds: false });
+            const { title, content } = this.parseFrontMatter(this.markdownContent);
+    
+            let titleHtml = '';
+            if (title) {
+                titleHtml = `<h1>${title}</h1>`;
+            }
+
+            const processedContent = this.preProcessMarkdown(content);
+            const contentHtml = marked(processedContent, { renderer: this.getRenderer(false), headerIds: false });
+    
+            const finalHtmlForClipboard = titleHtml + contentHtml;
 
             // Create a Blob with the HTML content
             const blob = new Blob([finalHtmlForClipboard], { type: 'text/html' });
