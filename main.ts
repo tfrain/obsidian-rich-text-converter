@@ -61,15 +61,29 @@ class MediumPreviewView extends ItemView {
         renderer.strong = (text) => `<strong style="font-weight: bold;">${text}</strong>`;
 
         renderer.code = (code, lang) => {
-            const escapedCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const finalCode = escapedCode.split('\n').map(line => line.trim() === '' ? '&nbsp;' : line).join('\n');
+            const effectiveLang = lang || 'go';
+
+            const lines = code.split('\n');
+            const processedLines = lines.map(line => {
+                const unindentedLine = line.trimStart();
+                if (unindentedLine === '') {
+                    return '&nbsp;';
+                }
+                return unindentedLine
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            });
+            const finalCode = processedLines.join('\n');
             
             if (forPreview) {
-                const langClass = lang ? `language-${lang}` : 'no-highlight';
+                const langClass = `language-${effectiveLang}`;
                 return `<pre style="background-color: #f0f0f0; padding: 1em; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word;"><code class="${langClass}">${finalCode}</code></pre>`;
             } else {
-                // For the clipboard, Medium prefers a simple <pre> tag.
-                return `<pre>${finalCode}</pre>`;
+                // For the clipboard, Medium uses a data attribute.
+                return `<pre data-code-language="${effectiveLang}">${finalCode}</pre>`;
             }
         };
 
@@ -83,9 +97,19 @@ class MediumPreviewView extends ItemView {
         return renderer;
     }
 
+    private preProcessMarkdown(markdown: string): string {
+        return markdown.split('\n').map(line => {
+            if (line.trim().startsWith('```')) {
+                return line.trimStart();
+            }
+            return line;
+        }).join('\n');
+    }
+
     getMediumHtml(markdown: string): string {
+        const processedMarkdown = this.preProcessMarkdown(markdown);
         // Generate HTML for the PREVIEW using the renderer
-        return marked(markdown, { renderer: this.getRenderer(true), headerIds: false });
+        return marked(processedMarkdown, { renderer: this.getRenderer(true), headerIds: false });
     }
 
     async copyRenderedContent() {
@@ -95,7 +119,8 @@ class MediumPreviewView extends ItemView {
         }
 
         try {
-            const finalHtmlForClipboard = marked(this.markdownContent, { renderer: this.getRenderer(false), headerIds: false });
+            const processedMarkdown = this.preProcessMarkdown(this.markdownContent);
+            const finalHtmlForClipboard = marked(processedMarkdown, { renderer: this.getRenderer(false), headerIds: false });
 
             // Create a Blob with the HTML content
             const blob = new Blob([finalHtmlForClipboard], { type: 'text/html' });
