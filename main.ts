@@ -63,20 +63,41 @@ class MediumPreviewView extends ItemView {
         renderer.code = (code, lang) => {
             const effectiveLang = lang || 'go';
 
+            // --- DEDENT LOGIC ---
             const lines = code.split('\n');
-            const processedLines = lines.map(line => {
-                const unindentedLine = line.trimStart();
-                if (unindentedLine === '') {
+            
+            // Find minimum indentation of non-empty lines
+            let minIndent = Infinity;
+            for (const line of lines) {
+                if (line.trim() !== '') {
+                    const indent = line.match(/^\s*/)! [0].length;
+                    if (indent < minIndent) {
+                        minIndent = indent;
+                    }
+                }
+            }
+
+            // If minIndent is still Infinity, it means the code block was empty or contained only whitespace.
+            // In that case, we can just treat it as empty.
+            const dedentedCode = (minIndent === Infinity) 
+                ? code
+                : lines.map(line => line.substring(minIndent)).join('\n');
+            // --- END DEDENT LOGIC ---
+
+            // Now, process the dedented code
+            const finalLines = dedentedCode.split('\n').map(line => {
+                if (line.trim() === '') {
                     return '&nbsp;';
                 }
-                return unindentedLine
+                return line
                     .replace(/&/g, '&amp;')
                     .replace(/</g, '&lt;')
                     .replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;')
                     .replace(/'/g, '&#39;');
             });
-            const finalCode = processedLines.join('\n');
+
+            const finalCode = finalLines.join('\n');
             
             if (forPreview) {
                 const langClass = `language-${effectiveLang}`;
